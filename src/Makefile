@@ -2,9 +2,9 @@
 PLAT= generic
 
 LUA= /tmp/lua-5.1.4
-POLARSSL= /tmp/polarssl-0.13.1
+POLARSSL= /tmp/polarssl-0.14.3
 
-T= /usr/local/lib/lua/5.1/polarssl.so
+T= polarssl.so
 A= $(LUA)/src/libluapolarssl.a
 
 COPT= -O2 -fPIC -DNDEBUG
@@ -78,5 +78,5 @@ clean:
 .PHONY: all $(PLATS) default a clean
 
 
-luapolarssl.o: luapolarssl.c lbase64.c lhash.c lmpi.c lsession.c lssl.c \
-    lx509_cert.c lx509_crl.c common.h
+luapolarssl.o: luapolarssl.c laes.c lbase64.c lcamellia.c ldes.c lhash.c \
+    lmpi.c lpadlock.c lsession.c lssl.c lx509_cert.c lx509_crl.c common.h
