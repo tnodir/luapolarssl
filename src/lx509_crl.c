@@ -92,7 +92,7 @@ lx509_crl_tostring (lua_State *L)
 #define X509_CRL_METHODS \
     {"x509_crl",	lx509_crl_new}
 
-static luaL_reg lx509_crl_meth[] = {
+static luaL_Reg lx509_crl_meth[] = {
     {"close",		lx509_crl_close},
     {"parse_data",	lx509_crl_parse_data},
     {"parse_file",	lx509_crl_parse_file},

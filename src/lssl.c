@@ -893,7 +893,7 @@ lssl_tostring (lua_State *L)
 #define SSL_METHODS \
     {"ssl",		lssl_new}
 
-static luaL_reg lssl_meth[] = {
+static luaL_Reg lssl_meth[] = {
     {"init",			lssl_init},
     {"close",			lssl_close},
     {"bio_begin",		lssl_bio_begin},

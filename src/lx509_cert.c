@@ -112,7 +112,7 @@ lx509_cert_tostring (lua_State *L)
 #define X509_CERT_METHODS \
     {"x509_cert",	lx509_cert_new}
 
-static luaL_reg lx509_cert_meth[] = {
+static luaL_Reg lx509_cert_meth[] = {
     {"close",		lx509_cert_close},
     {"parse_test",	lx509_cert_parse_test},
     {"parse_data",	lx509_cert_parse_data},

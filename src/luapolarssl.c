@@ -175,7 +175,7 @@ lssl_hardclock (lua_State *L)
 }
 
 
-static luaL_reg polarssl_lib[] = {
+static luaL_Reg polarssl_lib[] = {
     {"hardclock",	lssl_hardclock},
     BASE64_METHODS,
     HASH_METHODS,
@@ -192,7 +192,7 @@ createmeta (lua_State *L)
 {
     struct meta_s {
 	const char *tname;
-	luaL_reg *meth;
+	luaL_Reg *meth;
     } meta[] = {
 	{HASH_TYPENAME,		lhash_meth},
 	{MPI_TYPENAME,		lmpi_meth},

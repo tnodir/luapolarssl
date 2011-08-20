@@ -76,7 +76,7 @@ lsession_tostring (lua_State *L)
 #define SESSION_METHODS \
     {"session",		lsession_new}
 
-static luaL_reg lsession_meth[] = {
+static luaL_Reg lsession_meth[] = {
     {"close",		lsession_close},
     {"id",		lsession_id},
     {"__tostring",	lsession_tostring},

@@ -660,7 +660,7 @@ lmpi_tostring (lua_State *L)
 #define MPI_METHODS \
     {"mpi",		lmpi_new}
 
-static luaL_reg lmpi_meth[] = {
+static luaL_Reg lmpi_meth[] = {
     {"close",		lmpi_close},
     {"grow",		lmpi_grow},
     {"swap",		lmpi_swap},

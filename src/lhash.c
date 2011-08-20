@@ -721,7 +721,7 @@ lhash_tostring (lua_State *L)
     {"hash_hmac",	lhash_hmac}, \
     {"hash",		lhash_new}
 
-static luaL_reg lhash_meth[] = {
+static luaL_Reg lhash_meth[] = {
     {"starts",		lhash_starts},
     {"update",		lhash_update},
     {"finish",		lhash_finish},
