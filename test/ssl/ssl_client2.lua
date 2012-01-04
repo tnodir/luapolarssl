@@ -92,7 +92,7 @@ local function connect()
     if not ssl:handshake() then return false end
 
     print(" ok")
-    print("    [ Cipher is " .. ssl:get_cipher() .. " ]")
+    print("    [ Ciphersuite is " .. ssl:get_ciphersuite() .. " ]")
 
     --
     -- 5. Verify the server certificate

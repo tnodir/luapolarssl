@@ -41,7 +41,7 @@ lsession_pushid (lua_State *L, ssl_session *ssn)
     const int len = ssn->length;
     unsigned char buf[1 + sizeof(ssn->id)];
 
-    buf[0] = (unsigned char) ssn->cipher;
+    buf[0] = (unsigned char) ssn->ciphersuite;
     memcpy(&buf[1], ssn->id, len);
     lua_pushlstring(L, (char *) buf, 1 + len);
 }

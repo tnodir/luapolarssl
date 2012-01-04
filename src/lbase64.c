@@ -3,8 +3,8 @@
 #include "polarssl/base64.h"
 
 
-typedef int (*f_base64_t) (unsigned char *dst, int *dlen,
-                           const unsigned char *src, int slen);
+typedef int (*f_base64_t) (unsigned char *dst, size_t *dlen,
+                           const unsigned char *src, size_t slen);
 
 
 /*
@@ -15,9 +15,9 @@ static int
 lbase64_oper (lua_State *L, f_base64_t func)
 {
     const unsigned char *src = lua_touserdata(L, 1);
-    const int slen = lua_tointeger(L, 2);
+    const size_t slen = lua_tointeger(L, 2);
     unsigned char *dst = lua_touserdata(L, 3);
-    int dlen = lua_tointeger(L, 4);
+    size_t dlen = lua_tointeger(L, 4);
     int res;
 
     res = func(dst, &dlen, src, slen);

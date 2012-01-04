@@ -12,17 +12,17 @@ local SERVER_PORT = 4433
 local DEBUG_LEVEL = 0
 
 -- Sorted by order of preference
-local my_ciphers = {
-    "SSL_EDH_RSA_AES_256_SHA",
-    --"SSL_EDH_RSA_CAMELLIA_256_SHA",
-    "SSL_EDH_RSA_DES_168_SHA",
-    "SSL_RSA_AES_256_SHA",
-    --"SSL_RSA_CAMELLIA_256_SHA",
-    "SSL_RSA_AES_128_SHA",
-    --"SSL_RSA_CAMELLIA_128_SHA",
-    "SSL_RSA_DES_168_SHA",
-    "SSL_RSA_RC4_128_SHA",
-    "SSL_RSA_RC4_128_MD5"
+local my_ciphersuites = {
+    "SSL-EDH-RSA-AES-256-SHA",
+    --"SSL-EDH-RSA-CAMELLIA-256-SHA",
+    "SSL-EDH-RSA-DES-168-SHA",
+    "SSL-RSA-AES-256-SHA",
+    --"SSL-RSA-CAMELLIA-256-SHA",
+    "SSL-RSA-AES-128-SHA",
+    --"SSL-RSA-CAMELLIA-128-SHA",
+    "SSL-RSA-DES-168-SHA",
+    "SSL-RSA-RC4-128-SHA",
+    "SSL-RSA-RC4-128-MD5"
 }
 
 local listen_fd, client_fd
@@ -93,7 +93,7 @@ local function accept()
 
     ssl:set_scb(get_session, set_session)
 
-    ssl:set_ciphers(my_ciphers)
+    ssl:set_ciphersuites(my_ciphersuites)
 
     ssl:set_ca_cert(srvcert, 1)
     ssl:set_own_cert(srvcert)
@@ -130,7 +130,7 @@ local function accept()
     do
 	local data = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n"
 	    .. "<h2><p><center>Successful connection using: "
-	    .. ssl:get_cipher() .. "\r\n"
+	    .. ssl:get_ciphersuite() .. "\r\n"
 
 	local res, len = ssl:write(data)
 	if res == nil then return false end

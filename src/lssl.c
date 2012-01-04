@@ -1,7 +1,8 @@
-/* Lua PolarSSL: SSLv3/TLSv1 shared functions */
+/* Lua PolarSSL: SSL/TLS functions */
 
 #include "polarssl/ssl.h"
-#include "polarssl/havege.h"
+#include "polarssl/entropy.h"
+#include "polarssl/ctr_drbg.h"
 #include "polarssl/certs.h"
 
 
@@ -44,28 +45,31 @@ enum {
     LSSL_ENV_MAX
 };
 
-#define SSL_CIPHERS_COUNT	10
+#define LSSL_CIPHERSUITES_MAX	10
 
 typedef struct {
     ssl_context ssl;
     ssl_session ssn;
     rsa_context rsa_key;
-    havege_state hs;
 
-    int ciphers[SSL_CIPHERS_COUNT + 1];
+    entropy_context entropy;
+    ctr_drbg_context ctr_drbg;
+
+    int ciphersuites[LSSL_CIPHERSUITES_MAX + 1];
 
     lua_State *L;
 
     FILE *dbg_file;
     int dbg_level;
 
-    int bio_len;
+    size_t bio_len;
     unsigned char *bio_buf;
 } lssl_context;
 
-typedef int (*f_rng_t) (void *ctx);
+typedef int (*f_rng_t) (void *ctx, unsigned char *buf, size_t len);
 typedef void (*f_dbg_t) (void *ctx, int level, const char *str);
-typedef int (*f_bio_t) (void *ctx, unsigned char *buf, int n);
+typedef int (*f_recv_t) (void *ctx, unsigned char *buf, size_t len);
+typedef int (*f_send_t) (void *ctx, const unsigned char *buf, size_t len);
 
 
 /*
@@ -85,7 +89,7 @@ lssl_new (lua_State *L)
 }
 
 static int
-lssl_bio_cb (lssl_context *ctx, unsigned char *buf, int n)
+lssl_bio_cb (lssl_context *ctx, unsigned char *buf, size_t n)
 {
     if (ctx->bio_len == 0) {
 	ctx->bio_len = n;
@@ -124,7 +128,7 @@ static int
 lssl_bio_end (lua_State *L)
 {
     lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
-    const int n = lua_tointeger(L, 2);
+    const size_t n = lua_tointeger(L, 2);
 
     if (ctx->bio_buf != NULL) {
 	ctx->bio_buf = NULL;
@@ -148,13 +152,17 @@ lssl_init (lua_State *L)
 
     res = ssl_init(ssl);
     if (!res) {
-	havege_init(&ctx->hs);
-	ssl_set_rng(ssl, havege_rand, &ctx->hs);
-	ssl_set_bio(ssl, (f_bio_t) lssl_bio_cb, ctx,
-	 (f_bio_t) lssl_bio_cb, ctx);
-	ssl_set_session(ssl, 1, 0, &ctx->ssn);
-	ssl_set_ciphers(ssl, ssl_default_ciphers);
-	ssl_set_dh_param(ssl, default_dhm_P, default_dhm_G);
+	rsa_init(&ctx->rsa_key, RSA_PKCS_V15, 0);
+	entropy_init(&ctx->entropy);
+	res = ctr_drbg_init(&ctx->ctr_drbg, entropy_func, &ctx->entropy, NULL, 0);
+	if (!res) {
+	    ssl_set_rng(ssl, ctr_drbg_random, &ctx->ctr_drbg);
+	    ssl_set_bio(ssl, (f_recv_t) lssl_bio_cb, ctx,
+	     (f_send_t) lssl_bio_cb, ctx);
+	    ssl_set_session(ssl, 1, 0, &ctx->ssn);
+	    ssl_set_ciphersuites(ssl, ssl_default_ciphersuites);
+	    ssl_set_dh_param(ssl, default_dhm_P, default_dhm_G);
+	}
     }
     return lssl_seterror(L, res);
 }
@@ -182,18 +190,39 @@ lssl_close (lua_State *L)
 }
 
 /*
- * Arguments: ssl_udata, [upper_bound (number)]
+ * Arguments: ssl_udata
+ */
+static int
+lssl_session_reset (lua_State *L)
+{
+    lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
+
+    return lssl_seterror(L,
+     (ssl_session_reset(&ctx->ssl), 0));
+}
+
+/*
+ * Arguments: ssl_udata, [upper_bound (number)
+ *	| buffer (ludata), buffer_length (number)]
  * Returns: number
  */
 static int
-lssl_havege_rand (lua_State *L)
+lssl_random (lua_State *L)
 {
     lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
-    unsigned int num, ub = lua_tointeger(L, 2);
+    const int is_udata = lua_isuserdata(L, 2);
+    const unsigned int ub = is_udata ? 0 : lua_tointeger(L, 2);
+    unsigned int num;
+    unsigned char *buf = is_udata ? lua_touserdata(L, 2) : &num;
+    const int len = is_udata ? luaL_checkinteger(L, 3) : (int) sizeof(num);
+    const int res = ctx->ssl.f_rng(&ctx->ssl.p_rng, buf, len);
 
-    num = havege_rand(&ctx->hs);
-    lua_pushnumber(L, ub ? num % ub : num);
-    return 1;
+    if (!res) {
+	lua_pushinteger(L, is_udata ? 1
+	 : (ub ? num % ub : num));
+	return 1;
+    }
+    return lssl_seterror(L, res);
 }
 
 /*
@@ -231,14 +260,16 @@ lssl_set_authmode (lua_State *L)
  * Arguments: ssl_udata, ..., environ. (table)
  */
 static int
-lssl_rng_cb (lssl_context *ctx)
+lssl_rng_cb (lssl_context *ctx, unsigned char *buf, size_t len)
 {
     lua_State *L = ctx->L;
     int res;
 
     lua_rawgeti(L, -1, LSSL_RNG);  /* function */
     lua_rawgeti(L, -2, LSSL_PRNG);  /* rng_context */
-    lua_call(L, 1, 1);
+    lua_pushlightuserdata(L, buf);
+    lua_pushinteger(L, len);
+    lua_call(L, 1, 3);
     res = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return res;
@@ -262,8 +293,8 @@ lssl_set_rng (lua_State *L)
     lua_rawseti(L, -2, LSSL_PRNG);
 
     return lssl_seterror(L, (ssl_set_rng(&ctx->ssl,
-     (is_nil ? havege_rand : (f_rng_t) lssl_rng_cb),
-     (is_nil ? (void *) &ctx->hs : ctx)), 0));
+     (is_nil ? ctr_drbg_random : (f_rng_t) lssl_rng_cb),
+     (is_nil ? (void *) &ctx->ctr_drbg : ctx)), 0));
 }
 
 /*
@@ -335,7 +366,7 @@ lssl_dbg_level (lua_State *L)
  * Arguments: ssl_udata, ..., environ. (table)
  */
 static int
-lssl_bio_recv_cb (lssl_context *ctx, unsigned char *buf, int n)
+lssl_bio_recv_cb (lssl_context *ctx, unsigned char *buf, size_t n)
 {
     lua_State *L = ctx->L;
     const char *s;
@@ -344,7 +375,7 @@ lssl_bio_recv_cb (lssl_context *ctx, unsigned char *buf, int n)
     lua_rawgeti(L, -2, LSSL_BIO_PRECV);  /* recv_context */
     lua_pushinteger(L, n);  /* number of bytes */
     lua_call(L, 2, 1);
-    s = lua_tolstring(L, -1, (size_t *) &n);  /* data */
+    s = lua_tolstring(L, -1, &n);  /* data */
     if (s)
 	memcpy(buf, s, n);
     else
@@ -357,14 +388,14 @@ lssl_bio_recv_cb (lssl_context *ctx, unsigned char *buf, int n)
  * Arguments: ssl_udata, ..., environ. (table)
  */
 static int
-lssl_bio_send_cb (lssl_context *ctx, unsigned char *buf, int n)
+lssl_bio_send_cb (lssl_context *ctx, const unsigned char *buf, size_t n)
 {
     lua_State *L = ctx->L;
     int res;
 
     lua_rawgeti(L, -1, LSSL_BIO_SEND);  /* function */
     lua_rawgeti(L, -2, LSSL_BIO_PSEND);  /* send_context */
-    lua_pushlstring(L, (char *) buf, n);  /* data */
+    lua_pushlstring(L, (const char *) buf, n);  /* data */
     lua_call(L, 2, 2);
     res = lua_isnil(L, -2) ? -1
      : lua_tointeger(L, -1);  /* number of bytes */
@@ -396,8 +427,8 @@ lssl_set_bio (lua_State *L)
     lua_rawseti(L, -2, LSSL_BIO_PSEND);
 
     return lssl_seterror(L, (ssl_set_bio(&ctx->ssl,
-     (f_bio_t) (is_nil ? lssl_bio_cb : lssl_bio_recv_cb), ctx,
-     (f_bio_t) (is_nil ? lssl_bio_cb : lssl_bio_send_cb), ctx), 0));
+     (is_nil ? (f_recv_t) lssl_bio_cb : (f_recv_t) lssl_bio_recv_cb), ctx,
+     (is_nil ? (f_send_t) lssl_bio_cb : (f_send_t) lssl_bio_send_cb), ctx), 0));
 }
 
 /*
@@ -468,85 +499,41 @@ lssl_set_scb (lua_State *L)
 }
 
 /*
- * Arguments: ssl_udata, cipher_names (string) ...
+ * Arguments: ssl_udata, ciphersuite_names (string) ...
  * Returns: ssl_udata
  */
 static int
-lssl_set_ciphers (lua_State *L)
+lssl_set_ciphersuites (lua_State *L)
 {
-    static const char *const cipher_names[] = {
-#ifdef POLARSSL_ARC4_C
-	"SSL_RSA_RC4_128_MD5",
-	"SSL_RSA_RC4_128_SHA",
-#endif
-#ifdef POLARSSL_DES_C
-	"SSL_RSA_DES_168_SHA",
-	"SSL_EDH_RSA_DES_168_SHA",
-#endif
-#ifdef POLARSSL_AES_C
-	"SSL_RSA_AES_128_SHA",
-	"SSL_RSA_AES_256_SHA",
-	"SSL_EDH_RSA_AES_256_SHA",
-#endif
-#ifdef POLARSSL_CAMELLIA_C
-	"SSL_RSA_CAMELLIA_128_SHA",
-	"SSL_EDH_RSA_CAMELLIA_128_SHA",
-	"SSL_RSA_CAMELLIA_256_SHA",
-	"SSL_EDH_RSA_CAMELLIA_256_SHA",
-#endif
-	NULL
-    };
-    static const int cipher_values[] = {
-#ifdef POLARSSL_ARC4_C
-	SSL_RSA_RC4_128_MD5,
-	SSL_RSA_RC4_128_SHA,
-#endif
-#ifdef POLARSSL_DES_C
-	SSL_RSA_DES_168_SHA,
-	SSL_EDH_RSA_DES_168_SHA,
-#endif
-#ifdef POLARSSL_AES_C
-	SSL_RSA_AES_128_SHA,
-	SSL_RSA_AES_256_SHA,
-	SSL_EDH_RSA_AES_256_SHA,
-#endif
-#ifdef POLARSSL_CAMELLIA_C
-	SSL_RSA_CAMELLIA_128_SHA,
-	SSL_EDH_RSA_CAMELLIA_128_SHA,
-	SSL_RSA_CAMELLIA_256_SHA,
-	SSL_EDH_RSA_CAMELLIA_256_SHA
-#endif
-    };
-
     lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
     int n = lua_gettop(L) - 1;
-    int *ciphers;
+    int *ciphersuites;
 
     if (n == 0)
-	ciphers = ssl_default_ciphers;
+	ciphersuites = ssl_default_ciphersuites;
     else {
 	const int is_table = lua_istable(L, 2);
-	int *p = ctx->ciphers;
+	int *cp = ctx->ciphersuites;
 	int i;
 
 	if (is_table)
 	    n = lua_rawlen(L, 2);
-	if (n > SSL_CIPHERS_COUNT) n = SSL_CIPHERS_COUNT;
+	if (n > LSSL_CIPHERSUITES_MAX)
+	    n = LSSL_CIPHERSUITES_MAX;
 	for (i = 1; i <= n; ++i) {
 	    if (is_table)
 		lua_rawgeti(L, 2, i);
 	    else
 		lua_pushvalue(L, 1 + i);
-	    *p++ = cipher_values[
-	     luaL_checkoption(L, -1, NULL, cipher_names)];
+	    *cp++ = ssl_get_ciphersuite_id(luaL_checkstring(L, -1));
 	    lua_pop(L, 1);
 	}
-	*p++ = 0;
-	ciphers = ctx->ciphers;
+	*cp++ = 0;
+	ciphersuites = ctx->ciphersuites;
     }
 
     return lssl_seterror(L,
-     (ssl_set_ciphers(&ctx->ssl, ciphers), 0));
+     (ssl_set_ciphersuites(&ctx->ssl, ciphersuites), 0));
 }
 
 /*
@@ -667,6 +654,8 @@ lssl_set_rsa_key (lua_State *L)
     const unsigned char *pwd = (const unsigned char *) lua_tolstring(L, 3, &pwdlen);
     rsa_context rsa_key;
 
+    rsa_init(&rsa_key, RSA_PKCS_V15, 0);
+
     return lssl_set_rsa(L, ctx, &rsa_key,
      x509parse_key(&rsa_key, key, keylen, pwd, pwdlen));
 }
@@ -683,6 +672,8 @@ lssl_set_rsa_keyfile (lua_State *L)
     const char *pwd = lua_tostring(L, 3);
     rsa_context rsa_key;
 
+    rsa_init(&rsa_key, RSA_PKCS_V15, 0);
+
     return lssl_set_rsa(L, ctx, &rsa_key,
      x509parse_keyfile(&rsa_key, path, pwd));
 }
@@ -698,6 +689,8 @@ lssl_set_rsa_keytest (lua_State *L)
     const char *key = (ctx->ssl.endpoint == SSL_IS_SERVER)
      ? test_srv_key : test_cli_key;
     rsa_context rsa_key;
+
+    rsa_init(&rsa_key, RSA_PKCS_V15, 0);
 
     return lssl_set_rsa(L, ctx, &rsa_key,
      x509parse_key(&rsa_key, (const unsigned char *) key, strlen(key), NULL, 0));
@@ -730,6 +723,21 @@ lssl_set_hostname (lua_State *L)
     const char *hostname = luaL_checkstring(L, 2);
 
     return lssl_seterror(L, ssl_set_hostname(ssl, hostname));
+}
+
+/*
+ * Arguments: ssl_udata, major (number), minor (number)
+ * Returns: ssl_udata
+ */
+static int
+lssl_set_max_version (lua_State *L)
+{
+    ssl_context *ssl = checkudata(L, 1, SSL_TYPENAME);
+    const int major = luaL_checkint(L, 2);
+    const int minor = luaL_checkint(L, 3);
+
+    return lssl_seterror(L,
+     (ssl_set_max_version(ssl, major, minor), 0));
 }
 
 /*
@@ -768,11 +776,24 @@ lssl_get_verify_result (lua_State *L)
  * Returns: cipher_name (string)
  */
 static int
-lssl_get_cipher (lua_State *L)
+lssl_get_ciphersuite (lua_State *L)
 {
     lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
 
-    lua_pushstring(L, ssl_get_cipher(&ctx->ssl));
+    lua_pushstring(L, ssl_get_ciphersuite(&ctx->ssl));
+    return 1;
+}
+
+/*
+ * Arguments: ssl_udata
+ * Returns: version_name (string)
+ */
+static int
+lssl_get_version (lua_State *L)
+{
+    lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
+
+    lua_pushstring(L, ssl_get_version(&ctx->ssl));
     return 1;
 }
 
@@ -816,7 +837,7 @@ lssl_read (lua_State *L)
     const int is_udata = lua_isuserdata(L, 2);
     unsigned char buffer[4096];
     unsigned char *buf = is_udata ? lua_touserdata(L, 2) : buffer;
-    const int len = is_udata ? lua_tointeger(L, 3) : (int) sizeof(buffer);
+    const size_t len = is_udata ? (size_t) lua_tointeger(L, 3) : sizeof(buffer);
     int res;
 
     lua_settop(L, 1);
@@ -896,9 +917,10 @@ lssl_tostring (lua_State *L)
 static luaL_Reg lssl_meth[] = {
     {"init",			lssl_init},
     {"close",			lssl_close},
+    {"session_reset",		lssl_session_reset},
     {"bio_begin",		lssl_bio_begin},
     {"bio_end",			lssl_bio_end},
-    {"havege_rand",		lssl_havege_rand},
+    {"random",			lssl_random},
     {"set_endpoint",		lssl_set_endpoint},
     {"set_authmode",		lssl_set_authmode},
     {"set_rng",			lssl_set_rng},
@@ -906,7 +928,7 @@ static luaL_Reg lssl_meth[] = {
     {"dbg_level",		lssl_dbg_level},
     {"set_bio",			lssl_set_bio},
     {"set_scb",			lssl_set_scb},
-    {"set_ciphers",		lssl_set_ciphers},
+    {"set_ciphersuites",	lssl_set_ciphersuites},
     {"set_peer_cn",		lssl_set_peer_cn},
     {"set_ca_cert",		lssl_set_ca_cert},
     {"set_ca_crl",		lssl_set_ca_crl},
@@ -916,9 +938,11 @@ static luaL_Reg lssl_meth[] = {
     {"set_rsa_keytest",		lssl_set_rsa_keytest},
     {"set_dh_param",		lssl_set_dh_param},
     {"set_hostname",		lssl_set_hostname},
+    {"set_max_version",		lssl_set_max_version},
     {"get_bytes_avail",		lssl_get_bytes_avail},
     {"get_verify_result",	lssl_get_verify_result},
-    {"get_cipher",		lssl_get_cipher},
+    {"get_ciphersuite",		lssl_get_ciphersuite},
+    {"get_version",		lssl_get_version},
     {"get_peer_cert",		lssl_get_peer_cert},
     {"handshake",		lssl_handshake},
     {"read",			lssl_read},

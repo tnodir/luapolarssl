@@ -9,7 +9,7 @@ local format = string.format
 
 
 local str = "Hello, world!"
-local digest = polarssl.hash_data("md5", str)
+local digest = polarssl.hash_data("MD5", str)
 
 stdout:write("\n  MD5('", str, "') = ", digest, "\n\n")
 

@@ -77,7 +77,7 @@ local function main(arg)
     if narg == 0 then
 	print"print mode:  hashsum <type> <file> <file> ..."
 	print"check mode:  hashsum <type> -c <checksum file>"
-	print"  type:  md2 md4 md5 sha1 sha224 sha256 sha384 sha512"
+	print"  type:  MD2 MD4 MD5 SHA1 SHA224 SHA256 SHA384 SHA512"
 	return false
     end
 

@@ -17,7 +17,7 @@ lmpi_new (lua_State *L)
     luaL_getmetatable(L, MPI_TYPENAME);
     lua_setmetatable(L, -2);
 
-    mpi_init(X, NULL);
+    mpi_init(X);
     return 1;
 }
 
@@ -29,7 +29,7 @@ lmpi_close (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
 
-    mpi_free(X, NULL);
+    mpi_free(X);
     return 0;
 }
 
@@ -41,7 +41,7 @@ static int
 lmpi_grow (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
-    const int nblimbs = luaL_checkint(L, 2);
+    const size_t nblimbs = luaL_checkinteger(L, 2);
 
     return lssl_seterror(L, mpi_grow(X, nblimbs));
 }
@@ -142,8 +142,8 @@ lmpi_get (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
     const int radix = luaL_optinteger(L, 2, 16);
-    char buf[4096];
-    int len = sizeof(buf);
+    char buf[POLARSSL_MPI_READ_BUFFER_SIZE];
+    size_t len = sizeof(buf);
     int res;
 
     memset(buf, 0, len);
@@ -152,7 +152,7 @@ lmpi_get (lua_State *L)
 	--len;
     }
     else {
-	const int n = mpi_size(X);
+	const size_t n = mpi_size(X);
 	res = (len < n) ? POLARSSL_ERR_MPI_BUFFER_TOO_SMALL
 	 : mpi_write_binary(X, (void *) buf, n);
 	len = n;
@@ -163,6 +163,34 @@ lmpi_get (lua_State *L)
 	return 1;
     }
     return lssl_seterror(L, res);
+}
+
+/*
+ * Arguments: mpi_udata, positon (number), value (number)
+ * Returns: [mpi_udata]
+ */
+static int
+lmpi_set_bit (lua_State *L)
+{
+    mpi *X = checkudata(L, 1, MPI_TYPENAME);
+    const size_t pos = luaL_checkinteger(L, 2);
+    const unsigned char val = lua_tointeger(L, 3);
+
+    return lssl_seterror(L, mpi_set_bit(X, pos, val));
+}
+
+/*
+ * Arguments: mpi_udata, positon (number)
+ * Returns: [number]
+ */
+static int
+lmpi_get_bit (lua_State *L)
+{
+    mpi *X = checkudata(L, 1, MPI_TYPENAME);
+    const size_t pos = luaL_checkinteger(L, 2);
+
+    lua_pushinteger(L, mpi_get_bit(X, pos));
+    return 1;
 }
 
 /*
@@ -203,7 +231,7 @@ lmpi_read_binary (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
     const void *p = lua_touserdata(L, 2);
-    const int len = luaL_checkinteger(L, 3);
+    const size_t len = luaL_checkinteger(L, 3);
 
     return lssl_seterror(L, mpi_read_binary(X, p, len));
 }
@@ -217,7 +245,7 @@ lmpi_write_binary (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
     void *p = lua_touserdata(L, 2);
-    const int len = luaL_checkinteger(L, 3);
+    const size_t len = luaL_checkinteger(L, 3);
 
     return lssl_seterror(L, mpi_write_binary(X, p, len));
 }
@@ -230,7 +258,7 @@ static int
 lmpi_shift_l (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
-    const int n = luaL_checkinteger(L, 2);
+    const size_t n = luaL_checkinteger(L, 2);
 
     return lssl_seterror(L, mpi_shift_l(X, n));
 }
@@ -243,7 +271,7 @@ static int
 lmpi_shift_r (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
-    const int n = luaL_checkinteger(L, 2);
+    const size_t n = luaL_checkinteger(L, 2);
 
     return lssl_seterror(L, mpi_shift_r(X, n));
 }
@@ -531,9 +559,9 @@ lmpi_mod (lua_State *L)
 	break;
     case LUA_TNUMBER: {
 	    const int b = lua_tointeger(L, 2);
-	    int r;
+	    t_uint r;
 
-	    res = mpi_mod_int((t_int *) &r, X, b);
+	    res = mpi_mod_int(&r, X, b);
 	    if (!res) {
 		lua_pushinteger(L, r);
 		return 1;
@@ -577,6 +605,24 @@ lmpi_exp_mod (lua_State *L)
 }
 
 /*
+ * Arguments: mpi_udata, size (number), [ssl_udata (RNG)]
+ * Returns: [mpi_udata]
+ */
+static int
+lmpi_fill_random (lua_State *L)
+{
+    mpi *X = checkudata(L, 1, MPI_TYPENAME);
+    const size_t size = luaL_checkinteger(L, 2);
+    ssl_context *ssl = lua_isuserdata(L, 3) ? checkudata(L, 3, SSL_TYPENAME) : NULL;
+    havege_state hs;
+    f_rng_t f_rng = ssl ? ssl->f_rng : havege_random;
+    void *p_rng = ssl ? ssl->p_rng : &hs;
+
+    if (!ssl) havege_init(&hs);
+    return lssl_seterror(L, mpi_fill_random(X, size, f_rng, p_rng));
+}
+
+/*
  * Arguments: mpi_udata, mpi_udata (Left-hand), mpi_udata (Right-hand)
  * Returns: [mpi_udata]
  */
@@ -614,7 +660,7 @@ lmpi_is_prime (lua_State *L)
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
     ssl_context *ssl = lua_isuserdata(L, 2) ? checkudata(L, 2, SSL_TYPENAME) : NULL;
     havege_state hs;
-    f_rng_t f_rng = ssl ? ssl->f_rng : havege_rand;
+    f_rng_t f_rng = ssl ? ssl->f_rng : havege_random;
     void *p_rng = ssl ? ssl->p_rng : &hs;
 
     if (!ssl) havege_init(&hs);
@@ -629,11 +675,11 @@ static int
 lmpi_gen_prime (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
-    const int nbits = luaL_checkinteger(L, 2);
+    const size_t nbits = luaL_checkinteger(L, 2);
     const int dh_flag = lua_toboolean(L, 3);
     ssl_context *ssl = lua_isuserdata(L, 4) ? checkudata(L, 4, SSL_TYPENAME) : NULL;
     havege_state hs;
-    f_rng_t f_rng = ssl ? ssl->f_rng : havege_rand;
+    f_rng_t f_rng = ssl ? ssl->f_rng : havege_random;
     void *p_rng = ssl ? ssl->p_rng : &hs;
 
     if (!ssl) havege_init(&hs);
@@ -649,10 +695,7 @@ lmpi_tostring (lua_State *L)
 {
     mpi *X = checkudata(L, 1, MPI_TYPENAME);
 
-    if (X->p != NULL)
-	lua_pushfstring(L, MPI_TYPENAME " (%p)", X->p);
-    else
-	lua_pushliteral(L, MPI_TYPENAME " (closed)");
+    lua_pushfstring(L, MPI_TYPENAME " (%p)", X->p);
     return 1;
 }
 
@@ -669,6 +712,8 @@ static luaL_Reg lmpi_meth[] = {
     {"__len",		lmpi_size},
     {"set",		lmpi_set},
     {"get",		lmpi_get},
+    {"set_bit",		lmpi_set_bit},
+    {"get_bit",		lmpi_get_bit},
     {"read_file",	lmpi_read_file},
     {"write_file",	lmpi_write_file},
     {"read_binary",	lmpi_read_binary},
@@ -693,6 +738,7 @@ static luaL_Reg lmpi_meth[] = {
     {"mod",		lmpi_mod},
     {"__mod",		lmpi_new_mod},
     {"exp_mod",		lmpi_exp_mod},
+    {"fill_random",	lmpi_fill_random},
     {"gcd",		lmpi_gcd},
     {"inv_mod",		lmpi_inv_mod},
     {"is_prime",	lmpi_is_prime},

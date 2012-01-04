@@ -33,22 +33,22 @@ typedef struct {
 	sha4_context sha4;
 #endif
     } eng;
-    int h_idx;
-    int h_size;
+    short h_idx;  /* index in hash engines union */
+    short h_size;  /* output length */
 } hash_context;
 
-typedef void (*f_hash_t) (const unsigned char *in, int ilen, unsigned char *buf);
+typedef void (*f_hash_t) (const unsigned char *in, size_t ilen, unsigned char *buf);
 typedef int (*f_hash_file_t) (const char *path, unsigned char *buf);
-typedef void (*f_hash_hmac_t) (const unsigned char *key, int klen,
-                               const unsigned char *src, int slen,
+typedef void (*f_hash_hmac_t) (const unsigned char *key, size_t klen,
+                               const unsigned char *src, size_t slen,
                                unsigned char *buf);
 
 typedef void (*f_hash_starts_t) (void *ctx);
-typedef void (*f_hash_update_t) (void *ctx, const unsigned char *in, int ilen);
+typedef void (*f_hash_update_t) (void *ctx, const unsigned char *in, size_t ilen);
 typedef void (*f_hash_finish_t) (void *ctx, unsigned char *buf);
 
-typedef void (*f_hash_hmac_starts_t) (void *ctx, const unsigned char *key, int klen);
-typedef void (*f_hash_hmac_update_t) (void *ctx, const unsigned char *in, int ilen);
+typedef void (*f_hash_hmac_starts_t) (void *ctx, const unsigned char *key, size_t klen);
+typedef void (*f_hash_hmac_update_t) (void *ctx, const unsigned char *in, size_t ilen);
 typedef void (*f_hash_hmac_finish_t) (void *ctx, unsigned char *buf);
 typedef void (*f_hash_hmac_reset_t) (void *ctx);
 
@@ -80,22 +80,22 @@ lhash_totype (lua_State *L, int idx, hash_context *ctx)
 {
     static const char *const hash_names[] = {
 #ifdef POLARSSL_MD2_C
-	"md2",
+	"MD2",
 #endif
 #ifdef POLARSSL_MD4_C
-	"md4",
+	"MD4",
 #endif
 #ifdef POLARSSL_MD5_C
-	"md5",
+	"MD5",
 #endif
 #ifdef POLARSSL_SHA1_C
-	"sha1",
+	"SHA1",
 #endif
 #ifdef POLARSSL_SHA2_C
-	"sha224", "sha256",
+	"SHA224", "SHA256",
 #endif
 #ifdef POLARSSL_SHA4_C
-	"sha384", "sha512",
+	"SHA384", "SHA512",
 #endif
 	NULL
     };
@@ -127,13 +127,13 @@ lhash_totype (lua_State *L, int idx, hash_context *ctx)
 #ifdef POLARSSL_SHA2_C
 
 static void
-sha224 (const unsigned char *input, int ilen, unsigned char *buf)
+sha224 (const unsigned char *input, size_t ilen, unsigned char *buf)
 {
     sha2(input, ilen, buf, 1);
 }
 
 static void
-sha256 (const unsigned char *input, int ilen, unsigned char *buf)
+sha256 (const unsigned char *input, size_t ilen, unsigned char *buf)
 {
     sha2(input, ilen, buf, 0);
 }
@@ -143,13 +143,13 @@ sha256 (const unsigned char *input, int ilen, unsigned char *buf)
 #ifdef POLARSSL_SHA4_C
 
 static void
-sha384 (const unsigned char *input, int ilen, unsigned char *buf)
+sha384 (const unsigned char *input, size_t ilen, unsigned char *buf)
 {
     sha4(input, ilen, buf, 1);
 }
 
 static void
-sha512 (const unsigned char *input, int ilen, unsigned char *buf)
+sha512 (const unsigned char *input, size_t ilen, unsigned char *buf)
 {
     sha4(input, ilen, buf, 0);
 }
@@ -276,16 +276,16 @@ lhash_file (lua_State *L)
 #ifdef POLARSSL_SHA2_C
 
 static void
-sha224_hmac (const unsigned char *key, int klen,
-             const unsigned char *src, int slen,
+sha224_hmac (const unsigned char *key, size_t klen,
+             const unsigned char *src, size_t slen,
              unsigned char *buf)
 {
     sha2_hmac(key, klen, src, slen, buf, 1);
 }
 
 static void
-sha256_hmac (const unsigned char *key, int klen,
-             const unsigned char *src, int slen,
+sha256_hmac (const unsigned char *key, size_t klen,
+             const unsigned char *src, size_t slen,
              unsigned char *buf)
 {
     sha2_hmac(key, klen, src, slen, buf, 0);
@@ -296,16 +296,16 @@ sha256_hmac (const unsigned char *key, int klen,
 #ifdef POLARSSL_SHA4_C
 
 static void
-sha384_hmac (const unsigned char *key, int klen,
-             const unsigned char *src, int slen,
+sha384_hmac (const unsigned char *key, size_t klen,
+             const unsigned char *src, size_t slen,
              unsigned char *buf)
 {
     sha4_hmac(key, klen, src, slen, buf, 1);
 }
 
 static void
-sha512_hmac (const unsigned char *key, int klen,
-             const unsigned char *src, int slen,
+sha512_hmac (const unsigned char *key, size_t klen,
+             const unsigned char *src, size_t slen,
              unsigned char *buf)
 {
     sha4_hmac(key, klen, src, slen, buf, 0);
@@ -521,13 +521,13 @@ lhash_finish (lua_State *L)
 #ifdef POLARSSL_SHA2_C
 
 static void
-sha224_hmac_starts (void *ctx, const unsigned char *key, int klen)
+sha224_hmac_starts (void *ctx, const unsigned char *key, size_t klen)
 {
     sha2_hmac_starts(ctx, key, klen, 1);
 }
 
 static void
-sha256_hmac_starts (void *ctx, const unsigned char *key, int klen)
+sha256_hmac_starts (void *ctx, const unsigned char *key, size_t klen)
 {
     sha2_hmac_starts(ctx, key, klen, 0);
 }
@@ -537,13 +537,13 @@ sha256_hmac_starts (void *ctx, const unsigned char *key, int klen)
 #ifdef POLARSSL_SHA4_C
 
 static void
-sha384_hmac_starts (void *ctx, const unsigned char *key, int klen)
+sha384_hmac_starts (void *ctx, const unsigned char *key, size_t klen)
 {
     sha4_hmac_starts(ctx, key, klen, 1);
 }
 
 static void
-sha512_hmac_starts (void *ctx, const unsigned char *key, int klen)
+sha512_hmac_starts (void *ctx, const unsigned char *key, size_t klen)
 {
     sha4_hmac_starts(ctx, key, klen, 0);
 }
