@@ -103,7 +103,7 @@ createmeta (lua_State *L)
 	luaL_newmetatable(L, meta[i].tname);
 	lua_pushvalue(L, -1);  /* push metatable */
 	lua_setfield(L, -2, "__index");  /* metatable.__index = metatable */
-	luaL_register(L, NULL, meta[i].meth);
+	luaL_setfuncs(L, meta[i].meth, 0);
 	lua_pop(L, 1);
     }
 }

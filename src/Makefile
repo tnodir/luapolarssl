@@ -1,7 +1,7 @@
 
 PLAT= generic
 
-LUA= /tmp/lua-5.1.4
+LUA= /tmp/lua-5.2.0
 POLARSSL= /tmp/polarssl-1.1.0
 
 T= polarssl.so
