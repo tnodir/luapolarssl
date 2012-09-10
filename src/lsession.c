@@ -12,12 +12,12 @@
 static int
 lsession_new (lua_State *L)
 {
-    ssl_session *ssn = lua_newuserdata(L, sizeof(ssl_session));
+  ssl_session *ssn = lua_newuserdata(L, sizeof(ssl_session));
 
-    memset(ssn, 0, sizeof(ssl_session));
-    luaL_getmetatable(L, SESSION_TYPENAME);
-    lua_setmetatable(L, -2);
-    return 1;
+  memset(ssn, 0, sizeof(ssl_session));
+  luaL_getmetatable(L, SESSION_TYPENAME);
+  lua_setmetatable(L, -2);
+  return 1;
 }
 
 /*
@@ -26,10 +26,10 @@ lsession_new (lua_State *L)
 static int
 lsession_close (lua_State *L)
 {
-    ssl_session *ssn = checkudata(L, 1, SESSION_TYPENAME);
+  ssl_session *ssn = checkudata(L, 1, SESSION_TYPENAME);
 
-    memset(ssn, 0, sizeof(ssl_session));
-    return 0;
+  memset(ssn, 0, sizeof(ssl_session));
+  return 0;
 }
 
 /*
@@ -38,12 +38,12 @@ lsession_close (lua_State *L)
 static void
 lsession_pushid (lua_State *L, ssl_session *ssn)
 {
-    const int len = ssn->length;
-    unsigned char buf[1 + sizeof(ssn->id)];
+  const int len = ssn->length;
+  unsigned char buf[1 + sizeof(ssn->id)];
 
-    buf[0] = (unsigned char) ssn->ciphersuite;
-    memcpy(&buf[1], ssn->id, len);
-    lua_pushlstring(L, (char *) buf, 1 + len);
+  buf[0] = (unsigned char) ssn->ciphersuite;
+  memcpy(&buf[1], ssn->id, len);
+  lua_pushlstring(L, (char *) buf, 1 + len);
 }
 
 /*
@@ -53,10 +53,10 @@ lsession_pushid (lua_State *L, ssl_session *ssn)
 static int
 lsession_id (lua_State *L)
 {
-    ssl_session *ssn = checkudata(L, 1, SESSION_TYPENAME);
+  ssl_session *ssn = checkudata(L, 1, SESSION_TYPENAME);
 
-    lsession_pushid(L, ssn);
-    return 1;
+  lsession_pushid(L, ssn);
+  return 1;
 }
 
 /*
@@ -66,20 +66,20 @@ lsession_id (lua_State *L)
 static int
 lsession_tostring (lua_State *L)
 {
-    ssl_session *ssn = checkudata(L, 1, SESSION_TYPENAME);
+  ssl_session *ssn = checkudata(L, 1, SESSION_TYPENAME);
 
-    lua_pushfstring(L, SESSION_TYPENAME " (%p)", ssn);
-    return 1;
+  lua_pushfstring(L, SESSION_TYPENAME " (%p)", ssn);
+  return 1;
 }
 
 
 #define SESSION_METHODS \
-    {"session",		lsession_new}
+  {"session",		lsession_new}
 
 static luaL_Reg lsession_meth[] = {
-    {"close",		lsession_close},
-    {"id",		lsession_id},
-    {"__tostring",	lsession_tostring},
-    {"__gc",		lsession_close},
-    {NULL, NULL}
+  {"close",		lsession_close},
+  {"id",		lsession_id},
+  {"__tostring",	lsession_tostring},
+  {"__gc",		lsession_close},
+  {NULL, NULL}
 };

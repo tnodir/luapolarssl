@@ -14,41 +14,41 @@ local GENERATOR = "4"
 
 
 local function main()
-    local G, P, Q = polarssl.mpi(), polarssl.mpi(), polarssl.mpi()
-    local hs = polarssl.ssl()
+  local G, P, Q = polarssl.mpi(), polarssl.mpi(), polarssl.mpi()
+  local hs = polarssl.ssl()
 
-    assert(G.gen_prime, "  ! Prime-number generation is not available.")
+  assert(G.gen_prime, "  ! Prime-number generation is not available.")
 
-    G:set(GENERATOR, 10)
+  G:set(GENERATOR, 10)
 
-    print("  . Seeding the random number generator...")
+  print("  . Seeding the random number generator...")
 
-    assert(hs:init())
+  assert(hs:init())
 
-    print(" ok\n  . Generating the modulus, please wait...")
+  print(" ok\n  . Generating the modulus, please wait...")
 
-    --
-    -- This can take a long time...
-    --
-    assert(P:gen_prime(DH_P_SIZE, true, hs))
+  --
+  -- This can take a long time...
+  --
+  assert(P:gen_prime(DH_P_SIZE, true, hs))
 
-    print(" ok\n  . Verifying that Q = (P-1)/2 is prime...")
+  print(" ok\n  . Verifying that Q = (P-1)/2 is prime...")
 
-    assert(Q:sub(P, 1))
-    assert(Q:div(Q, 2))
-    assert(Q:is_prime(hs))
+  assert(Q:sub(P, 1))
+  assert(Q:div(Q, 2))
+  assert(Q:is_prime(hs))
 
-    print(" ok\n  . Exporting the value in dh_prime.txt...")
+  print(" ok\n  . Exporting the value in dh_prime.txt...")
 
-    local fout = assert(io.open("dh_prime.txt", "wb+"))
+  local fout = assert(io.open("dh_prime.txt", "wb+"))
 
-    assert(P:write_file(fout, "P = ", 16))
-    assert(G:write_file(fout, "G = ", 16))
+  assert(P:write_file(fout, "P = ", 16))
+  assert(G:write_file(fout, "G = ", 16))
 
-    fout:close()
-    print(" ok")
+  fout:close()
+  print(" ok")
 
-    return true
+  return true
 end
 
 os.exit(main() and 0 or 1)

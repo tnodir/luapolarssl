@@ -13,16 +13,16 @@ local DEBUG_LEVEL = 0
 
 -- Sorted by order of preference
 local my_ciphersuites = {
-    "SSL-EDH-RSA-AES-256-SHA",
-    --"SSL-EDH-RSA-CAMELLIA-256-SHA",
-    "SSL-EDH-RSA-DES-168-SHA",
-    "SSL-RSA-AES-256-SHA",
-    --"SSL-RSA-CAMELLIA-256-SHA",
-    "SSL-RSA-AES-128-SHA",
-    --"SSL-RSA-CAMELLIA-128-SHA",
-    "SSL-RSA-DES-168-SHA",
-    "SSL-RSA-RC4-128-SHA",
-    "SSL-RSA-RC4-128-MD5"
+  "SSL-EDH-RSA-AES-256-SHA",
+  --"SSL-EDH-RSA-CAMELLIA-256-SHA",
+  "SSL-EDH-RSA-DES-168-SHA",
+  "SSL-RSA-AES-256-SHA",
+  --"SSL-RSA-CAMELLIA-256-SHA",
+  "SSL-RSA-AES-128-SHA",
+  --"SSL-RSA-CAMELLIA-128-SHA",
+  "SSL-RSA-DES-168-SHA",
+  "SSL-RSA-RC4-128-SHA",
+  "SSL-RSA-RC4-128-MD5"
 }
 
 local listen_fd, client_fd
@@ -30,157 +30,157 @@ local srvcert, ssl
 
 
 local function net_bind(host, port)
-    local fd = sock.handle()
-    assert(fd:socket())
-    assert(fd:sockopt("reuseaddr", 1))
-    local saddr = sock.addr()
-    assert(saddr:inet(port, sock.inet_pton(host)))
-    assert(fd:bind(saddr))
-    assert(fd:listen(10))
-    return fd
+  local fd = sock.handle()
+  assert(fd:socket())
+  assert(fd:sockopt("reuseaddr", 1))
+  local saddr = sock.addr()
+  assert(saddr:inet(port, sock.inet_pton(host)))
+  assert(fd:bind(saddr))
+  assert(fd:listen(10))
+  return fd
 end
 
 local function net_close(fd)
-    fd:shutdown()
-    fd:close()
+  fd:shutdown()
+  fd:close()
 end
 
 
 local get_session, set_session
 do
-    local sessions = setmetatable({}, {__mode = "v"})
+  local sessions = setmetatable({}, {__mode = "v"})
 
-    get_session = function(ssl, sid)
-	return sessions[sid]
-    end
+  get_session = function(ssl, sid)
+    return sessions[sid]
+  end
 
-    set_session = function(ssl, sid)
-	local ssn = sessions[sid]
-	if not ssn then
-	    ssn = polarssl.session()
-	    sessions[sid] = ssn
-	end
-	return ssn
+  set_session = function(ssl, sid)
+    local ssn = sessions[sid]
+    if not ssn then
+      ssn = polarssl.session()
+      sessions[sid] = ssn
     end
+    return ssn
+  end
 end
 
 
 local function accept()
-    net_close(client_fd)
-    ssl:close()
+  net_close(client_fd)
+  ssl:close()
 
-    print("  . Waiting for a remote connection ...")
+  print("  . Waiting for a remote connection ...")
 
-    if not listen_fd:accept(client_fd) then return false end
+  if not listen_fd:accept(client_fd) then return false end
 
-    print(" ok")
+  print(" ok")
 
-    --
-    -- 4. Setup stuff
-    --
-    print("  . Setting up the RNG and SSL data....")
+  --
+  -- 4. Setup stuff
+  --
+  print("  . Setting up the RNG and SSL data....")
 
-    if not ssl:init() then return false end
+  if not ssl:init() then return false end
 
-    print(" ok")
+  print(" ok")
 
-    ssl:set_endpoint("server")
-    ssl:set_authmode("none")
+  ssl:set_endpoint("server")
+  ssl:set_authmode("none")
 
-    ssl:set_dbg(io.stdout):dbg_level(DEBUG_LEVEL)
+  ssl:set_dbg(io.stdout):dbg_level(DEBUG_LEVEL)
 
-    ssl:set_bio(client_fd.read, client_fd, client_fd.write, client_fd)
+  ssl:set_bio(client_fd.read, client_fd, client_fd.write, client_fd)
 
-    ssl:set_scb(get_session, set_session)
+  ssl:set_scb(get_session, set_session)
 
-    ssl:set_ciphersuites(my_ciphersuites)
+  ssl:set_ciphersuites(my_ciphersuites)
 
-    ssl:set_ca_cert(srvcert, 1)
-    ssl:set_own_cert(srvcert)
-    ssl:set_rsa_keytest("server")
+  ssl:set_ca_cert(srvcert, 1)
+  ssl:set_own_cert(srvcert)
+  ssl:set_rsa_keytest("server")
 
-    --
-    -- 5. Handshake
-    --
-    print("  . Performing the SSL/TLS handshake...")
+  --
+  -- 5. Handshake
+  --
+  print("  . Performing the SSL/TLS handshake...")
 
-    if not ssl:handshake() then return false end
+  if not ssl:handshake() then return false end
 
-    print(" ok")
+  print(" ok")
 
-    --
-    -- 6. Read the HTTP Request
-    --
-    print("  < Read from client:")
+  --
+  -- 6. Read the HTTP Request
+  --
+  print("  < Read from client:")
 
-    do
-	local data = ssl:read(1024)
+  do
+    local data = ssl:read(1024)
 
-	if data then
-	    print(" " .. #data .. " bytes read\n")
-	    print(data)
-	end
+    if data then
+      print(" " .. #data .. " bytes read\n")
+      print(data)
     end
+  end
 
-    --
-    -- 7. Write the 200 Response
-    --
-    print("  > Write to client:")
+  --
+  -- 7. Write the 200 Response
+  --
+  print("  > Write to client:")
 
-    do
-	local data = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n"
-	    .. "<h2><p><center>Successful connection using: "
-	    .. ssl:get_ciphersuite() .. "\r\n"
+  do
+    local data = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n"
+      .. "<h2><p><center>Successful connection using: "
+      .. ssl:get_ciphersuite() .. "\r\n"
 
-	local res, len = ssl:write(data)
-	if res == nil then return false end
+    local res, len = ssl:write(data)
+    if res == nil then return false end
 
-	print(" " .. len .. " bytes written\n")
-	print(data)
-    end
+    print(" " .. len .. " bytes written\n")
+    print(data)
+  end
 
-    ssl:close_notify()
+  ssl:close_notify()
 
-    return true
+  return true
 end
 
 local function main()
-    --
-    -- 1. Load the certificates and private RSA key
-    --
-    print("\n  . Loading the server cert. and key...")
+  --
+  -- 1. Load the certificates and private RSA key
+  --
+  print("\n  . Loading the server cert. and key...")
 
-    srvcert = polarssl.x509_cert()
-    assert(srvcert:parse_test"server")
-    assert(srvcert:parse_test"ca")
+  srvcert = polarssl.x509_cert()
+  assert(srvcert:parse_test"server")
+  assert(srvcert:parse_test"ca")
 
-    print("ok")
+  print("ok")
 
-    --
-    -- 2. Setup the listening TCP socket
-    --
-    print("  . Bind on https://localhost:" .. SERVER_PORT .. "/ ...")
+  --
+  -- 2. Setup the listening TCP socket
+  --
+  print("  . Bind on https://localhost:" .. SERVER_PORT .. "/ ...")
 
-    listen_fd = net_bind("127.0.0.1", SERVER_PORT)
+  listen_fd = net_bind("127.0.0.1", SERVER_PORT)
 
-    print("ok")
+  print("ok")
 
-    --
-    -- 3. Wait until a client connects
-    --
-    if sys.win32 then
-	sys.run("https://localhost:" .. SERVER_PORT .. "/")
+  --
+  -- 3. Wait until a client connects
+  --
+  if sys.win32 then
+    sys.run("https://localhost:" .. SERVER_PORT .. "/")
+  end
+
+  client_fd = sock.handle()
+
+  ssl = polarssl.ssl()
+
+  while true do
+    if not accept() then
+      print("ERROR:", errorMessage)
     end
-
-    client_fd = sock.handle()
-
-    ssl = polarssl.ssl()
-
-    while true do
-	if not accept() then
-	    print("ERROR:", errorMessage)
-	end
-    end
+  end
 end
 
 sys.exit(main() and 0 or 1)
