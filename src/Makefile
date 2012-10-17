@@ -1,7 +1,7 @@
 
 PLAT= generic
 
-LUA= /tmp/lua-5.2.0
+LUA= /tmp/lua-5.2.1
 POLARSSL= /tmp/polarssl-1.1.0
 
 T= polarssl.so
@@ -33,7 +33,7 @@ MYLDFLAGS= -shared -Bdynamic
 MYLIBS=
 
 CC= gcc
-MAKE_DLL= ld $(MYLDFLAGS) -o
+MAKE_DLL= $(CC) $(MYLDFLAGS) -o
 AR= ar rcu
 RANLIB= ranlib
 RM= rm -f
