@@ -2,7 +2,7 @@
 PLAT= generic
 
 LUA= /tmp/lua-5.2.1
-POLARSSL= /tmp/polarssl-1.1.0
+POLARSSL= /tmp/polarssl-1.2.0
 
 T= polarssl.so
 A= $(LUA)/src/libluapolarssl.a
@@ -79,4 +79,4 @@ clean:
 
 
 luapolarssl.o: luapolarssl.c laes.c lbase64.c lcamellia.c ldes.c lhash.c \
-    lmpi.c lpadlock.c lsession.c lssl.c lx509_cert.c lx509_crl.c common.h
+ lmpi.c lpadlock.c lsession.c lssl.c lx509_cert.c lx509_crl.c common.h

@@ -13,16 +13,35 @@ local DEBUG_LEVEL = 0
 
 -- Sorted by order of preference
 local my_ciphersuites = {
-  "SSL-EDH-RSA-AES-256-SHA",
-  --"SSL-EDH-RSA-CAMELLIA-256-SHA",
-  "SSL-EDH-RSA-DES-168-SHA",
-  "SSL-RSA-AES-256-SHA",
-  --"SSL-RSA-CAMELLIA-256-SHA",
-  "SSL-RSA-AES-128-SHA",
-  --"SSL-RSA-CAMELLIA-128-SHA",
-  "SSL-RSA-DES-168-SHA",
-  "SSL-RSA-RC4-128-SHA",
-  "SSL-RSA-RC4-128-MD5"
+  "TLS-RSA-WITH-RC4-128-MD5",
+  "TLS-RSA-WITH-RC4-128-SHA",
+  "TLS-RSA-WITH-3DES-EDE-CBC-SHA",
+  "TLS-DHE-RSA-WITH-3DES-EDE-CBC-SHA",
+  "TLS-RSA-WITH-AES-128-CBC-SHA",
+  "TLS-DHE-RSA-WITH-AES-128-CBC-SHA",
+  "TLS-RSA-WITH-AES-256-CBC-SHA",
+  "TLS-DHE-RSA-WITH-AES-256-CBC-SHA",
+  "TLS-RSA-WITH-AES-128-CBC-SHA256",
+  "TLS-RSA-WITH-AES-256-CBC-SHA256",
+  "TLS-DHE-RSA-WITH-AES-128-CBC-SHA256",
+  "TLS-DHE-RSA-WITH-AES-256-CBC-SHA256",
+  "TLS-RSA-WITH-AES-128-GCM-SHA256",
+  "TLS-RSA-WITH-AES-256-GCM-SHA384",
+  "TLS-DHE-RSA-WITH-AES-128-GCM-SHA256",
+  "TLS-DHE-RSA-WITH-AES-256-GCM-SHA384",
+  "TLS-RSA-WITH-CAMELLIA-128-CBC-SHA",
+  "TLS-DHE-RSA-WITH-CAMELLIA-128-CBC-SHA",
+  "TLS-RSA-WITH-CAMELLIA-256-CBC-SHA",
+  "TLS-DHE-RSA-WITH-CAMELLIA-256-CBC-SHA",
+  "TLS-RSA-WITH-CAMELLIA-128-CBC-SHA256",
+  "TLS-DHE-RSA-WITH-CAMELLIA-128-CBC-SHA256",
+  "TLS-RSA-WITH-CAMELLIA-256-CBC-SHA256",
+  "TLS-DHE-RSA-WITH-CAMELLIA-256-CBC-SHA256",
+  "TLS-RSA-WITH-NULL-MD5",
+  "TLS-RSA-WITH-NULL-SHA",
+  "TLS-RSA-WITH-NULL-SHA256",
+  "TLS-RSA-WITH-DES-CBC-SHA",
+  "TLS-DHE-RSA-WITH-DES-CBC-SHA"
 }
 
 local listen_fd, client_fd
@@ -91,7 +110,7 @@ local function accept()
 
   ssl:set_bio(client_fd.read, client_fd, client_fd.write, client_fd)
 
-  ssl:set_scb(get_session, set_session)
+  ssl:set_session_cache(get_session, set_session)
 
   ssl:set_ciphersuites(my_ciphersuites)
 
@@ -178,7 +197,7 @@ local function main()
 
   while true do
     if not accept() then
-      print("ERROR:", errorMessage)
+      print("ERROR:", SYS_ERR)
     end
   end
 end

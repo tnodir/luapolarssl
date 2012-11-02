@@ -142,7 +142,7 @@ lmpi_get (lua_State *L)
 {
   mpi *X = checkudata(L, 1, MPI_TYPENAME);
   const int radix = luaL_optinteger(L, 2, 16);
-  char buf[POLARSSL_MPI_READ_BUFFER_SIZE];
+  char buf[POLARSSL_MPI_RW_BUFFER_SIZE];
   size_t len = sizeof(buf);
   int res;
 

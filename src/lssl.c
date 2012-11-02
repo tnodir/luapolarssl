@@ -42,10 +42,12 @@ enum {
   LSSL_SESS_GET,  /* (server) session get callback */
   LSSL_SESS_SET,  /* (server) session set callback */
   LSSL_SESS_CUR,  /* current session */
+  LSSL_SNI,  /* ServerName TLS extension callback */
+  LSSL_PSNI,  /* context for the ServerName TLS extension function */
   LSSL_ENV_MAX
 };
 
-#define LSSL_CIPHERSUITES_MAX	10
+#define LSSL_CIPHERSUITES_MAX	29
 
 typedef struct {
   ssl_context ssl;
@@ -55,8 +57,6 @@ typedef struct {
   entropy_context entropy;
   ctr_drbg_context ctr_drbg;
 
-  int ciphersuites[LSSL_CIPHERSUITES_MAX + 1];
-
   lua_State *L;
 
   FILE *dbg_file;
@@ -64,12 +64,18 @@ typedef struct {
 
   size_t bio_len;
   unsigned char *bio_buf;
+
+  int ciphersuites[LSSL_CIPHERSUITES_MAX + 1];
 } lssl_context;
 
-typedef int (*f_rng_t) (void *ctx, unsigned char *buf, size_t len);
-typedef void (*f_dbg_t) (void *ctx, int level, const char *str);
-typedef int (*f_recv_t) (void *ctx, unsigned char *buf, size_t len);
-typedef int (*f_send_t) (void *ctx, const unsigned char *buf, size_t len);
+typedef int (*f_rng_t) (void *ud, unsigned char *buf, size_t len);
+typedef void (*f_dbg_t) (void *ud, int level, const char *str);
+typedef int (*f_recv_t) (void *ud, unsigned char *buf, size_t len);
+typedef int (*f_send_t) (void *ud, const unsigned char *buf, size_t len);
+typedef int (*f_get_cache_t) (void *ud, ssl_session *ssn);
+typedef int (*f_set_cache_t) (void *ud, const ssl_session *ssn);
+typedef int (*f_sni_t) (void *ud, ssl_context *ctx,
+                        const unsigned char *buf, size_t len);
 
 
 /*
@@ -159,8 +165,7 @@ lssl_init (lua_State *L)
       ssl_set_rng(ssl, ctr_drbg_random, &ctx->ctr_drbg);
       ssl_set_bio(ssl, (f_recv_t) lssl_bio_cb, ctx,
        (f_send_t) lssl_bio_cb, ctx);
-      ssl_set_session(ssl, 1, 0, &ctx->ssn);
-      ssl_set_ciphersuites(ssl, ssl_default_ciphersuites);
+      ssl_set_session(ssl, &ctx->ssn);
       ssl_set_dh_param(ssl, default_dhm_P, default_dhm_G);
     }
   }
@@ -191,6 +196,7 @@ lssl_close (lua_State *L)
 
 /*
  * Arguments: ssl_udata
+ * Returns: ssl_udata
  */
 static int
 lssl_session_reset (lua_State *L)
@@ -198,7 +204,7 @@ lssl_session_reset (lua_State *L)
   lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
 
   return lssl_seterror(L,
-   (ssl_session_reset(&ctx->ssl), 0));
+   ssl_session_reset(&ctx->ssl));
 }
 
 /*
@@ -283,7 +289,7 @@ static int
 lssl_set_rng (lua_State *L)
 {
   lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
-  const int is_nil = lua_isnil(L, 2);
+  const int is_nil = lua_isnoneornil(L, 2);
 
   lua_settop(L, 3);
   lua_getfenv(L, 1);
@@ -329,7 +335,7 @@ static int
 lssl_set_dbg (lua_State *L)
 {
   lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
-  const int is_nil = lua_isnil(L, 2);
+  const int is_nil = lua_isnoneornil(L, 2);
 
   ctx->dbg_file = lua_isuserdata(L, 2)
    ? lua_unboxpointer(L, 2, LUA_FILEHANDLE) : NULL;
@@ -413,7 +419,7 @@ static int
 lssl_set_bio (lua_State *L)
 {
   lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
-  const int is_nil = lua_isnil(L, 2);
+  const int is_nil = lua_isnoneornil(L, 2);
 
   lua_settop(L, 5);
   lua_getfenv(L, 1);
@@ -435,19 +441,20 @@ lssl_set_bio (lua_State *L)
  * Arguments: ssl_udata, ..., environ. (table)
  */
 static int
-lssl_session_get_cb (lssl_context *ctx)
+lssl_session_get_cb (lssl_context *ctx, ssl_session *ssn)
 {
   lua_State *L = ctx->L;
-  ssl_session *ssn;
+  ssl_session *ssn_cache;
 
   lua_rawgeti(L, -1, LSSL_SESS_GET);  /* function */
   lua_pushvalue(L, 1);  /* ssl_udata */
-  lsession_pushid(L, &ctx->ssn);
+  lsession_pushid(L, ssn);
   lua_call(L, 2, 1);
-  ssn = lua_isuserdata(L, -1) ? checkudata(L, -1, SESSION_TYPENAME) : NULL;
+  ssn_cache = lua_isuserdata(L, -1)
+   ? checkudata(L, -1, SESSION_TYPENAME) : NULL;
   lua_rawseti(L, -2, LSSL_SESS_CUR);  /* [session_udata] */
-  if (ssn) {
-    memcpy(ctx->ssn.master, ssn->master, sizeof(ssn->master));
+  if (ssn_cache) {
+    memcpy(ssn->master, ssn_cache->master, sizeof(ssn_cache->master));
     return 0;
   }
   return 1;
@@ -457,19 +464,21 @@ lssl_session_get_cb (lssl_context *ctx)
  * Arguments: ssl_udata, ..., environ. (table)
  */
 static int
-lssl_session_set_cb (lssl_context *ctx)
+lssl_session_set_cb (lssl_context *ctx, const ssl_session *ssn)
 {
   lua_State *L = ctx->L;
-  ssl_session *ssn;
+  ssl_session *ssn_cache;
 
   lua_rawgeti(L, -1, LSSL_SESS_SET);  /* function */
   lua_pushvalue(L, 1);  /* ssl_udata */
-  lsession_pushid(L, &ctx->ssn);
+  lsession_pushid(L, ssn);
   lua_call(L, 2, 1);
-  ssn = lua_isuserdata(L, -1) ? checkudata(L, -1, SESSION_TYPENAME) : NULL;
+  ssn_cache = lua_isuserdata(L, -1)
+   ? checkudata(L, -1, SESSION_TYPENAME) : NULL;
   lua_rawseti(L, -2, LSSL_SESS_CUR);  /* [session_udata] */
-  if (ssn) {
-    *ssn = ctx->ssn;
+  if (ssn_cache) {
+    *ssn_cache = *ssn;
+    ssn_cache->peer_cert = NULL;
     return 0;
   }
   return 1;
@@ -481,10 +490,10 @@ lssl_session_set_cb (lssl_context *ctx)
  * Returns: ssl_udata
  */
 static int
-lssl_set_scb (lua_State *L)
+lssl_set_session_cache (lua_State *L)
 {
   lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
-  const int is_nil = lua_isnil(L, 2);
+  const int is_nil = lua_isnoneornil(L, 2);
 
   lua_settop(L, 3);
   lua_getfenv(L, 1);
@@ -493,9 +502,51 @@ lssl_set_scb (lua_State *L)
   lua_pushvalue(L, 3);
   lua_rawseti(L, -2, LSSL_SESS_SET);
 
-  return lssl_seterror(L, (ssl_set_scb(&ctx->ssl,
-   is_nil ? NULL : (int (*)(ssl_context *)) lssl_session_get_cb,
-   is_nil ? NULL : (int (*)(ssl_context *)) lssl_session_set_cb), 0));
+  return lssl_seterror(L, (ssl_set_session_cache(&ctx->ssl,
+   (is_nil ? NULL : (f_get_cache_t) lssl_session_get_cb), ctx,
+   (is_nil ? NULL : (f_set_cache_t) lssl_session_set_cb), ctx), 0));
+}
+
+/*
+ * Arguments: ssl_udata, ..., environ. (table)
+ */
+static int
+lssl_sni_cb (lssl_context *ctx, ssl_context *ssl,
+             const unsigned char *buf, size_t len)
+{
+  lua_State *L = ctx->L;
+  int res;
+
+  (void) ssl;
+
+  lua_rawgeti(L, -1, LSSL_RNG);  /* function */
+  lua_rawgeti(L, -2, LSSL_PRNG);  /* sni_context */
+  lua_pushlstring(L, (const char *) buf, len);  /* hostname */
+  lua_call(L, 1, 2);
+  res = lua_tointeger(L, -1);
+  lua_pop(L, 1);
+  return res;
+}
+
+/*
+ * Arguments: ssl_udata, sni_callback (function), sni_context (any)
+ * Returns: ssl_udata
+ */
+static int
+lssl_set_sni (lua_State *L)
+{
+  lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
+  const int is_nil = lua_isnoneornil(L, 2);
+
+  lua_settop(L, 3);
+  lua_getfenv(L, 1);
+  lua_pushvalue(L, 2);
+  lua_rawseti(L, -2, LSSL_SNI);
+  lua_pushvalue(L, 3);
+  lua_rawseti(L, -2, LSSL_PSNI);
+
+  return lssl_seterror(L, (ssl_set_sni(&ctx->ssl,
+   (is_nil ? NULL : (f_sni_t) lssl_sni_cb), ctx), 0));
 }
 
 /*
@@ -507,7 +558,7 @@ lssl_set_ciphersuites (lua_State *L)
 {
   lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
   int n = lua_gettop(L) - 1;
-  int *ciphersuites;
+  const int *ciphersuites;
 
   if (n == 0)
     ciphersuites = ssl_default_ciphersuites;
@@ -741,6 +792,53 @@ lssl_set_max_version (lua_State *L)
 }
 
 /*
+ * Arguments: ssl_udata, major (number), minor (number)
+ * Returns: ssl_udata
+ */
+static int
+lssl_set_min_version (lua_State *L)
+{
+  ssl_context *ssl = checkudata(L, 1, SSL_TYPENAME);
+  const int major = luaL_checkint(L, 2);
+  const int minor = luaL_checkint(L, 3);
+
+  return lssl_seterror(L,
+   (ssl_set_min_version(ssl, major, minor), 0));
+}
+
+/*
+ * Arguments: ssl_udata, renegotiation (boolean)
+ * Returns: ssl_udata
+ */
+static int
+lssl_set_renegotiation (lua_State *L)
+{
+  ssl_context *ssl = checkudata(L, 1, SSL_TYPENAME);
+  const int renegotiation = lua_toboolean(L, 2)
+   ? SSL_RENEGOTIATION_ENABLED : SSL_RENEGOTIATION_DISABLED;
+
+  return lssl_seterror(L,
+   (ssl_set_renegotiation(ssl, renegotiation), 0));
+}
+
+/*
+ * Arguments: ssl_udata, [legacy (string: "no", "allow", "break")]
+ * Returns: ssl_udata
+ */
+static int
+lssl_legacy_renegotiation (lua_State *L)
+{
+  ssl_context *ssl = checkudata(L, 1, SSL_TYPENAME);
+  const char *s = lua_tostring(L, 2);
+  const int renegotiation = (s && *s == 'a') ? SSL_LEGACY_ALLOW_RENEGOTIATION
+   : (s && *s == 'b' ? SSL_LEGACY_BREAK_HANDSHAKE
+   : SSL_LEGACY_NO_RENEGOTIATION);
+
+  return lssl_seterror(L,
+   (ssl_legacy_renegotiation(ssl, renegotiation), 0));
+}
+
+/*
  * Arguments: ssl_udata
  * Returns: number
  */
@@ -799,15 +897,18 @@ lssl_get_version (lua_State *L)
 
 /*
  * Arguments: ssl_udata, x509_cert_udata
- * Returns: ssl_udata
+ * Returns: [ssl_udata]
  */
 static int
 lssl_get_peer_cert (lua_State *L)
 {
   ssl_context *ssl = checkudata(L, 1, SSL_TYPENAME);
   x509_cert *crt = checkudata(L, 2, X509_CERT_TYPENAME);
+  const x509_cert *peer_cert = ssl_get_peer_cert(ssl);
 
-  *crt = *ssl->peer_cert;
+  if (!peer_cert) return 0;
+
+  *crt = *peer_cert;
   return lssl_seterror(L, 0);
 }
 
@@ -824,6 +925,21 @@ lssl_handshake (lua_State *L)
 
   ctx->L = L;
   return lssl_seterror(L, ssl_handshake(&ctx->ssl));
+}
+
+/*
+ * Arguments: ssl_udata
+ * Returns: ssl_udata
+ */
+static int
+lssl_renegotiate (lua_State *L)
+{
+  lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
+
+  lua_getfenv(L, 1);
+
+  ctx->L = L;
+  return lssl_seterror(L, ssl_renegotiate(&ctx->ssl));
 }
 
 /*
@@ -883,6 +999,83 @@ lssl_write (lua_State *L)
 }
 
 /*
+ * Arguments: ssl_udata, alert_message(string), [is_fatal (boolean)]
+ * Returns: ssl_udata
+ */
+static int
+lssl_send_alert_message (lua_State *L)
+{
+  static const char *const alert_names[] = {
+    "UNEXPECTED-MESSAGE",
+    "BAD-RECORD-MAC",
+    "DECRYPTION-FAILED",
+    "RECORD-OVERFLOW",
+    "DECOMPRESSION-FAILURE",
+    "HANDSHAKE-FAILURE",
+    "NO-CERT",
+    "BAD-CERT",
+    "UNSUPPORTED-CERT",
+    "CERT-REVOKED",
+    "CERT-EXPIRED",
+    "CERT-UNKNOWN",
+    "ILLEGAL-PARAMETER",
+    "UNKNOWN-CA",
+    "ACCESS-DENIED",
+    "DECODE-ERROR",
+    "DECRYPT-ERROR",
+    "EXPORT-RESTRICTION",
+    "PROTOCOL-VERSION",
+    "INSUFFICIENT-SECURITY",
+    "INTERNAL-ERROR",
+    "USER-CANCELED",
+    "NO-RENEGOTIATION",
+    "UNSUPPORTED-EXT",
+    "UNRECOGNIZED-NAME",
+    NULL
+  };
+  static const int alert_values[] = {
+    SSL_ALERT_MSG_UNEXPECTED_MESSAGE,
+    SSL_ALERT_MSG_BAD_RECORD_MAC,
+    SSL_ALERT_MSG_DECRYPTION_FAILED,
+    SSL_ALERT_MSG_RECORD_OVERFLOW,
+    SSL_ALERT_MSG_DECOMPRESSION_FAILURE,
+    SSL_ALERT_MSG_HANDSHAKE_FAILURE,
+    SSL_ALERT_MSG_NO_CERT,
+    SSL_ALERT_MSG_BAD_CERT,
+    SSL_ALERT_MSG_UNSUPPORTED_CERT,
+    SSL_ALERT_MSG_CERT_REVOKED,
+    SSL_ALERT_MSG_CERT_EXPIRED,
+    SSL_ALERT_MSG_CERT_UNKNOWN,
+    SSL_ALERT_MSG_ILLEGAL_PARAMETER,
+    SSL_ALERT_MSG_UNKNOWN_CA,
+    SSL_ALERT_MSG_ACCESS_DENIED,
+    SSL_ALERT_MSG_DECODE_ERROR,
+    SSL_ALERT_MSG_DECRYPT_ERROR,
+    SSL_ALERT_MSG_EXPORT_RESTRICTION,
+    SSL_ALERT_MSG_PROTOCOL_VERSION,
+    SSL_ALERT_MSG_INSUFFICIENT_SECURITY,
+    SSL_ALERT_MSG_INTERNAL_ERROR,
+    SSL_ALERT_MSG_USER_CANCELED,
+    SSL_ALERT_MSG_NO_RENEGOTIATION,
+    SSL_ALERT_MSG_UNSUPPORTED_EXT,
+    SSL_ALERT_MSG_UNRECOGNIZED_NAME
+  };
+
+  lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
+  const int alert_idx = luaL_checkoption(L, 2, NULL, alert_names);
+  const unsigned char message = alert_values[alert_idx];
+  const unsigned char level = lua_toboolean(L, 3)
+   ? SSL_ALERT_LEVEL_FATAL : SSL_ALERT_LEVEL_WARNING;
+
+  lua_settop(L, 1);
+  lua_getfenv(L, 1);
+
+  ctx->L = L;
+  return lssl_seterror(L,
+   ssl_send_alert_message(&ctx->ssl, level, message));
+}
+
+/*
  * Arguments: ssl_udata
  * Returns: ssl_udata
  */
@@ -927,7 +1120,8 @@ static luaL_Reg lssl_meth[] = {
   {"set_dbg",			lssl_set_dbg},
   {"dbg_level",			lssl_dbg_level},
   {"set_bio",			lssl_set_bio},
-  {"set_scb",			lssl_set_scb},
+  {"set_session_cache",		lssl_set_session_cache},
+  {"set_sni",			lssl_set_sni},
   {"set_ciphersuites",		lssl_set_ciphersuites},
   {"set_peer_cn",		lssl_set_peer_cn},
   {"set_ca_cert",		lssl_set_ca_cert},
@@ -939,14 +1133,19 @@ static luaL_Reg lssl_meth[] = {
   {"set_dh_param",		lssl_set_dh_param},
   {"set_hostname",		lssl_set_hostname},
   {"set_max_version",		lssl_set_max_version},
+  {"set_min_version",		lssl_set_min_version},
+  {"set_renegotiation",		lssl_set_renegotiation},
+  {"legacy_renegotiation",	lssl_legacy_renegotiation},
   {"get_bytes_avail",		lssl_get_bytes_avail},
   {"get_verify_result",		lssl_get_verify_result},
   {"get_ciphersuite",		lssl_get_ciphersuite},
   {"get_version",		lssl_get_version},
   {"get_peer_cert",		lssl_get_peer_cert},
   {"handshake",			lssl_handshake},
+  {"renegotiate",		lssl_renegotiate},
   {"read",			lssl_read},
   {"write",			lssl_write},
+  {"send_alert_message",	lssl_send_alert_message},
   {"close_notify",		lssl_close_notify},
   {"__tostring",		lssl_tostring},
   {"__gc",			lssl_close},

@@ -39,7 +39,7 @@
  * Error Reporting
  */
 
-#define LSSL_ERROR_MESSAGE	"errorMessage"
+#define LSSL_ERROR_MESSAGE	"SYS_ERR"
 
 static int lssl_seterror (lua_State *L, int err);
 

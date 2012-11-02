@@ -36,14 +36,15 @@ lsession_close (lua_State *L)
  * Returns: session_id (string)
  */
 static void
-lsession_pushid (lua_State *L, ssl_session *ssn)
+lsession_pushid (lua_State *L, const ssl_session *ssn)
 {
   const int len = ssn->length;
-  unsigned char buf[1 + sizeof(ssn->id)];
+  unsigned char buf[2 + sizeof(ssn->id)];
 
   buf[0] = (unsigned char) ssn->ciphersuite;
-  memcpy(&buf[1], ssn->id, len);
-  lua_pushlstring(L, (char *) buf, 1 + len);
+  buf[1] = (unsigned char) ssn->compression;
+  memcpy(&buf[2], ssn->id, len);
+  lua_pushlstring(L, (char *) buf, 2 + len);
 }
 
 /*

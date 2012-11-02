@@ -183,7 +183,7 @@ local function main()
 
 
   if not connect() then
-    print("ERROR:", errorMessage)
+    print("ERROR:", SYS_ERR)
     return false
   end
   return true
