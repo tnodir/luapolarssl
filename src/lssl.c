@@ -27,7 +27,8 @@ static const char * const default_dhm_G = "4";
 
 /* SSL Context environ. table reserved indexes */
 enum {
-  LSSL_CA_CERT = 1,  /* own trusted CA chain */
+  LSSL_CIPHERSUITES = 1,  /* custom ciphersuites */
+  LSSL_CA_CERT,  /* own trusted CA chain */
   LSSL_CA_CRL,  /* trusted CA CRLs */
   LSSL_OWN_CERT,  /* own X.509 certificate */
   LSSL_PEER_CN,  /* expected peer CN */
@@ -47,8 +48,6 @@ enum {
   LSSL_ENV_MAX
 };
 
-#define LSSL_CIPHERSUITES_MAX	29
-
 typedef struct {
   ssl_context ssl;
   ssl_session ssn;
@@ -64,8 +63,6 @@ typedef struct {
 
   size_t bio_len;
   unsigned char *bio_buf;
-
-  int ciphersuites[LSSL_CIPHERSUITES_MAX + 1];
 } lssl_context;
 
 typedef int (*f_rng_t) (void *ud, unsigned char *buf, size_t len);
@@ -550,38 +547,36 @@ lssl_set_sni (lua_State *L)
 }
 
 /*
- * Arguments: ssl_udata, ciphersuite_names (string) ...
+ * Arguments: ssl_udata, [ciphersuite_names (table: 1..n => name)]
  * Returns: ssl_udata
  */
 static int
 lssl_set_ciphersuites (lua_State *L)
 {
   lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
-  int n = lua_gettop(L) - 1;
   const int *ciphersuites;
 
-  if (n == 0)
-    ciphersuites = ssl_default_ciphersuites;
-  else {
-    const int is_table = lua_istable(L, 2);
-    int *cp = ctx->ciphersuites;
+  if (lua_istable(L, 2)) {
+    const int n = lua_rawlen(L, 2);
+    int *cp = lua_newuserdata(L, (n + 1) * sizeof(int));
     int i;
 
-    if (is_table)
-      n = lua_rawlen(L, 2);
-    if (n > LSSL_CIPHERSUITES_MAX)
-      n = LSSL_CIPHERSUITES_MAX;
+    ciphersuites = cp;
+
     for (i = 1; i <= n; ++i) {
-      if (is_table)
-        lua_rawgeti(L, 2, i);
-      else
-        lua_pushvalue(L, 1 + i);
+      lua_rawgeti(L, 2, i);
       *cp++ = ssl_get_ciphersuite_id(luaL_checkstring(L, -1));
       lua_pop(L, 1);
     }
-    *cp++ = 0;
-    ciphersuites = ctx->ciphersuites;
+    *cp = 0;
+  } else {
+    ciphersuites = ssl_default_ciphersuites;
+    lua_pushnil(L);
   }
+
+  lua_getfenv(L, 1);
+  lua_pushvalue(L, -2);
+  lua_rawseti(L, -2, LSSL_CIPHERSUITES);
 
   return lssl_seterror(L,
    (ssl_set_ciphersuites(&ctx->ssl, ciphersuites), 0));
