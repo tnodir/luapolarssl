@@ -53,7 +53,6 @@ typedef struct {
   ssl_session ssn;
   rsa_context rsa_key;
 
-  entropy_context entropy;
   ctr_drbg_context ctr_drbg;
 
   lua_State *L;
@@ -73,6 +72,9 @@ typedef int (*f_get_cache_t) (void *ud, ssl_session *ssn);
 typedef int (*f_set_cache_t) (void *ud, const ssl_session *ssn);
 typedef int (*f_sni_t) (void *ud, ssl_context *ctx,
                         const unsigned char *buf, size_t len);
+
+
+static void *g_EntropyKey;
 
 
 /*
@@ -155,9 +157,18 @@ lssl_init (lua_State *L)
 
   res = ssl_init(ssl);
   if (!res) {
+    entropy_context *entropy;
+
+    lua_rawgetp(L, LUA_REGISTRYINDEX, g_EntropyKey);
+    entropy = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    if (!entropy) {
+      entropy = lua_newuserdata(L, sizeof(entropy_context));
+      lua_rawsetp(L, LUA_REGISTRYINDEX, g_EntropyKey);
+      entropy_init(entropy);
+    }
     rsa_init(&ctx->rsa_key, RSA_PKCS_V15, 0);
-    entropy_init(&ctx->entropy);
-    res = ctr_drbg_init(&ctx->ctr_drbg, entropy_func, &ctx->entropy, NULL, 0);
+    res = ctr_drbg_init(&ctx->ctr_drbg, entropy_func, entropy, NULL, 0);
     if (!res) {
       ssl_set_rng(ssl, ctr_drbg_random, &ctx->ctr_drbg);
       ssl_set_bio(ssl, (f_recv_t) lssl_bio_cb, ctx,

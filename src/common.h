@@ -16,6 +16,13 @@
 #define lua_rawlen		lua_objlen
 #define lua_resume(L,from,n)	lua_resume((L), (n))
 #define luaL_setfuncs(L,l,n)	luaL_register((L), NULL, (l))
+
+#define lua_rawgetp(L,idx,p) \
+    (lua_pushlightuserdata((L), (p)), \
+     lua_rawget((L), (idx) - ((idx) < 0 && (idx) > -99 ? 1 : 0)))
+#define lua_rawsetp(L,idx,p) \
+    (lua_pushlightuserdata((L), (p)), lua_insert((L), -2), \
+     lua_rawset((L), (idx) - ((idx) < 0 && (idx) > -99 ? 1 : 0)))
 #else
 #define luaL_register(L,n,l)	luaL_newlib((L), (l))
 #define lua_setfenv		lua_setuservalue
