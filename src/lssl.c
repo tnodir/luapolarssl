@@ -159,12 +159,12 @@ lssl_init (lua_State *L)
   if (!res) {
     entropy_context *entropy;
 
-    lua_rawgetp(L, LUA_REGISTRYINDEX, g_EntropyKey);
+    lua_rawgetp(L, LUA_REGISTRYINDEX, &g_EntropyKey);
     entropy = lua_touserdata(L, -1);
     lua_pop(L, 1);
     if (!entropy) {
       entropy = lua_newuserdata(L, sizeof(entropy_context));
-      lua_rawsetp(L, LUA_REGISTRYINDEX, g_EntropyKey);
+      lua_rawsetp(L, LUA_REGISTRYINDEX, &g_EntropyKey);
       entropy_init(entropy);
     }
     rsa_init(&ctx->rsa_key, RSA_PKCS_V15, 0);
