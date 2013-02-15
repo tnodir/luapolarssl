@@ -1,8 +1,8 @@
 
 PLAT= generic
 
-LUA= /tmp/lua-5.2.1
-POLARSSL= /tmp/polarssl-1.2.0
+LUA= /opt/lua-5.2.1
+POLARSSL= /opt/polarssl-1.2.5
 
 T= polarssl.so
 A= $(LUA)/src/libluapolarssl.a

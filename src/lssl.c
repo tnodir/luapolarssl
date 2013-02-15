@@ -938,6 +938,21 @@ lssl_handshake (lua_State *L)
  * Returns: ssl_udata
  */
 static int
+lssl_handshake_step (lua_State *L)
+{
+  lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
+
+  lua_getfenv(L, 1);
+
+  ctx->L = L;
+  return lssl_seterror(L, ssl_handshake_step(&ctx->ssl));
+}
+
+/*
+ * Arguments: ssl_udata
+ * Returns: ssl_udata
+ */
+static int
 lssl_renegotiate (lua_State *L)
 {
   lssl_context *ctx = checkudata(L, 1, SSL_TYPENAME);
@@ -1148,6 +1163,7 @@ static luaL_Reg lssl_meth[] = {
   {"get_version",		lssl_get_version},
   {"get_peer_cert",		lssl_get_peer_cert},
   {"handshake",			lssl_handshake},
+  {"handshake_step",		lssl_handshake_step},
   {"renegotiate",		lssl_renegotiate},
   {"read",			lssl_read},
   {"write",			lssl_write},
